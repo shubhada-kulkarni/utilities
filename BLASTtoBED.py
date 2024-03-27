@@ -10,7 +10,8 @@ gtf = sys.argv[3]
 
 # parse the GTF file to store the name of the transcript and gene name (to later calculate gene length and convert co-ordinates)
 print("Creating GTF dictionary")
-gtf_dict = {}
+gtf_dict = {}       # dictionary with key as transcript ID and value as its chr, start, stop coordinates, strand and gene name
+exon_dict = {}      # dictionary with key as transcript ID and value as list of exon sorted based on coordinates
 for lgtf in open(gtf).readlines():
     if lgtf.startswith("#"):    continue
     egtf = lgtf.strip().split("\t")
@@ -20,7 +21,14 @@ for lgtf in open(gtf).readlines():
         transcript_id = [s for s in temp if "transcript_id" in s][0].replace("\"", "").replace(" ", "").replace("transcript_id", "")
         #print(gene_name, transcript_id)
         gtf_dict[transcript_id] = [egtf[0], egtf[3], egtf[4], gene_name, egtf[6]]
+        exon_dict[transcript_id] = []
+    elif (egtf[2] == "exon"):
+        temp = egtf[8].split(';')
+        transcript_id = [s for s in temp if "transcript_id" in s][0].replace("\"", "").replace(" ", "").replace("transcript_id", "")    
+        exon_dict[transcript_id].append([int(egtf[3]), int(egtf[4])]) 
+
 #print(gtf_dict)
+print(exon_dict["ENST0000064151#5"])
 
 # now perform the blast step and store the results in an output file
 blast_out = fasta + ".out"
@@ -35,15 +43,14 @@ for line in fin:
     gene = each[0].split("_")[0]
     transcript = each[1]
     if (transcript in gtf_dict.keys() and gtf_dict[transcript][3] == gene):
-        print(gene, transcript, gtf_dict[transcript])
+        #print(gene, transcript, gtf_dict[transcript])
         start, end = each[8], each[9]
         start = int(gtf_dict[transcript][1]) + int(each[8])
         chr = gtf_dict[transcript][0]
         strand = gtf_dict[transcript][4]
         score = each[11]
 
-
-        print(chr,  each[8]+","+each[9])
+        #print(chr,  each[8]+","+each[9])
 
 
 
