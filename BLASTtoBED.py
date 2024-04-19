@@ -3,10 +3,24 @@
 #
 
 import sys, os
+import numpy as np
+from bisect import bisect
+from operator import itemgetter
 
 fasta = sys.argv[1]
 db = sys.argv[2]
 gtf = sys.argv[3]
+
+## function to read fasta file and storing each sequence into dictionary
+def read_fasta(fastafile):
+    from Bio import SeqIO
+    fasta_dict = {}
+    fasta_sequences = SeqIO.parse(open(fastafile),'fasta')
+    for fasta in fasta_sequences:
+        name, sequence = fasta.id, str(fasta.seq)
+        fasta_dict[name] = sequence
+    return fasta_dict
+fasta_sequence_db = read_fasta(db)
 
 # parse the GTF file to store the name of the transcript and gene name (to later calculate gene length and convert co-ordinates)
 print("Creating GTF dictionary")
@@ -20,7 +34,7 @@ for lgtf in open(gtf).readlines():
         gene_name = [s for s in temp if "gene_name" in s][0].replace("\"", "").replace(" ", "").replace("gene_name", "")
         transcript_id = [s for s in temp if "transcript_id" in s][0].replace("\"", "").replace(" ", "").replace("transcript_id", "")
         #print(gene_name, transcript_id)
-        gtf_dict[transcript_id] = [egtf[0], egtf[3], egtf[4], gene_name, egtf[6]]
+        gtf_dict[transcript_id] = [egtf[0], int(egtf[3]), int(egtf[4]), gene_name, egtf[6]]
         exon_dict[transcript_id] = []
     elif (egtf[2] == "exon"):
         temp = egtf[8].split(';')
@@ -28,7 +42,7 @@ for lgtf in open(gtf).readlines():
         exon_dict[transcript_id].append([int(egtf[3]), int(egtf[4])]) 
 
 #print(gtf_dict)
-print(exon_dict["ENST0000064151#5"])
+print(exon_dict["ENST00000641515"])
 
 # now perform the blast step and store the results in an output file
 blast_out = fasta + ".out"
@@ -43,15 +57,23 @@ for line in fin:
     gene = each[0].split("_")[0]
     transcript = each[1]
     if (transcript in gtf_dict.keys() and gtf_dict[transcript][3] == gene):
-        #print(gene, transcript, gtf_dict[transcript])
-        start, end = each[8], each[9]
-        start = int(gtf_dict[transcript][1]) + int(each[8])
         chr = gtf_dict[transcript][0]
         strand = gtf_dict[transcript][4]
         score = each[11]
+        start, end = int(each[8]), int(each[9])
+        
+        # sort and remove duplicates for the transcript exon list
+        exon_transcript_sorted = sorted(exon_dict[transcript], key=itemgetter(0))
+        transcript_length_array = [i[1]-i[0]+1 for i in exon_transcript_sorted]
+        exon_index_transcript = np.cumsum(transcript_length_array)
+        
+        # if the gene is on the negative strand, swap the start and end coordinates by subtracting these from the transcript length
+        if (strand == "-"):
+            start = sum(transcript_length_array) - start
+            end = sum(transcript_length_array) - end
 
+        print(gene, transcript, gtf_dict[transcript], exon_transcript_sorted, exon_transcript_sorted[0][0], gtf_dict[transcript][1], transcript_length_array, sum(transcript_length_array), len(fasta_sequence_db[transcript]))
         #print(chr,  each[8]+","+each[9])
-
-
-
+        print(exon_index_transcript, start, end, bisect(exon_index_transcript, start))
+        
 
