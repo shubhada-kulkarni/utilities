@@ -10,6 +10,7 @@ from operator import itemgetter
 fasta = sys.argv[1]
 db = sys.argv[2]
 gtf = sys.argv[3]
+flag = sys.argv[4]
 
 outbed = fasta.replace(".fa", "_IGV.bed")
 fout = open(outbed, "w")
@@ -59,12 +60,17 @@ blast_command = "blastn -db " + db + " -query " + fasta + " -out " + blast_out +
 print(os.system(blast_command))
 
 # now parse the BLAST output file and store the results into BED format
+bed_output = []
 fin = open(blast_out).readlines()
+temp_dir = {}           # dictionary where key is every sequence ID and value is the transcript ID to which the sequence blocks are mapped. This is for BSJs only
 for line in fin:
     each = line.strip().split("\t")
+    print(each)
     gene = each[0].split("_")[0]
     transcript = each[1]
-    if (transcript in gtf_dict.keys() and gtf_dict[transcript][3] == gene):
+    if not each[0] in temp_dir.keys():
+        temp_dir[each[0]] = {}
+    if (transcript in gtf_dict.keys()):
         chr = gtf_dict[transcript][0]
         strand = gtf_dict[transcript][4]
         score = each[11]
@@ -76,27 +82,49 @@ for line in fin:
         transcript_length_array = [i[1]-i[0]+1 for i in exon_transcript_sorted]
         exon_index_transcript = np.cumsum(transcript_length_array).tolist()
         
-        # if the gene is on the negative strand, swap the start and end coordinates by subtracting these from the transcript length
-        if (strand == "-"):
-            start = sum(transcript_length_array) - start
-            end = sum(transcript_length_array) - end
+        if flag == "FSJ" or flag == "":
+            ## for forward splice junction, whole 50bp target sequence will map to the transcript. First 25bp will be in first exon
+            ## and second 25bp will be in the following exon.
 
-        exon_index = bisect(exon_index_transcript, start)
-        box1_length = exon_index_transcript[exon_index] - start
-        box2_length = match_length - box1_length
+            if (int(each[3]) != 50):        # for FSJ, mapping length of target sequence will always be 0
+                continue
 
-        # convert to genome coordinates
-        genome_start = exon_transcript_sorted[exon_index][1] - box1_length
-        genome_end = exon_transcript_sorted[exon_index+1][0] + box2_length
-        distance_exons = exon_transcript_sorted[exon_index+1][0] - exon_transcript_sorted[exon_index][1]
-        start_box2 = box1_length + distance_exons - 1
+            # if the gene is on the negative strand, swap the start and end coordinates by subtracting these from the transcript length
+            if (strand == "-"):
+                start = sum(transcript_length_array) - start
+                end = sum(transcript_length_array) - end
+
+            exon_index = bisect(exon_index_transcript, start)
+            box1_length = exon_index_transcript[exon_index] - start
+            box2_length = match_length - box1_length
+
+            print(len(exon_transcript_sorted), exon_index)
+
+            # convert to genome coordinates
+            genome_start = exon_transcript_sorted[exon_index][1] - box1_length
+            genome_end = exon_transcript_sorted[exon_index+1][0] + box2_length
+            distance_exons = exon_transcript_sorted[exon_index+1][0] - exon_transcript_sorted[exon_index][1]
+            start_box2 = box1_length + distance_exons - 1
+
+        elif flag == "BSJ":
+            ## for back splice junction, the mapping will be in two blocks. First block will map to the later exon and second
+            ## block will map to the earlier exon
+
+            if (int(each[3]) != 25):        # for BSJ, mapping length will be two blocks of 25 
+                continue
+
+            if not transcript in temp_dir[each[0]].keys():
+                temp_dir[each[0]][transcript] = []
+
 
         #print("###############")
         #print(gene, transcript, gtf_dict[transcript], exon_transcript_sorted, exon_transcript_sorted[0][0], gtf_dict[transcript][1], transcript_length_array, sum(transcript_length_array), len(fasta_sequence_db[transcript]))
         #print(exon_index_transcript, start, end, exon_index, box1_length, bisect(exon_index_transcript, end), box2_length)
         #print(genome_start, genome_end)
-
         bed_entry = [chr, str(genome_start), str(genome_end), each[0], "0", strand, str(genome_start), str(genome_end), "166,206,227", "2", str(box1_length)+","+str(box2_length), "0,"+str(start_box2)]
-        print(bed_entry)
-        fout.write("\t".join(bed_entry))
-        fout.write("\n")
+        #print(bed_entry)
+        bed_output.append(bed_entry)
+        
+# Writing output BED12 file        
+fout.write("\t".join(bed_entry))
+fout.write("\n")
